@@ -21,3 +21,6 @@ _testmain.go
 
 *.exe
 *.test
+
+# Generated files - maybe make a different extension?
+z*.go
