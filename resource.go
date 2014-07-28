@@ -8,40 +8,50 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // as this is read-only I'm not going to but a mutex on it
 // I wonder how big this map will get...?
 type resourceCache struct {
-	resources map[string]*[]byte
+	resources map[string]*resourceWithTime
 }
 
 var (
 	cache = resourceCache{
-		resources: make(map[string]*[]byte),
+		resources: make(map[string]*resourceWithTime),
 	}
 )
 
+type resourceWithTime struct {
+	modTime time.Time
+	data    []byte
+}
+
 func RegisterResource(resourceName string, resourceData []byte) {
-	cache.resources[resourceName] = &resourceData
+	cache.resources[resourceName] = &resourceWithTime{time.Now(), resourceData}
 }
 
 // GetResource returns the data associated wth a resource.
 // NOTE: resourceName must be a fully qualified path.
 func GetResource(resourceName string) ([]byte, error) {
 	if resource, ok := cache.resources[resourceName]; ok {
-		return *resource, nil
+		if stat, err := os.Stat(resourceName); !os.IsNotExist(err) &&
+			!stat.ModTime().After(resource.modTime) {
+			return resource.data, nil
+		}
 	}
 
 	// TODO(ttacon): hmm, this half makes me think the map needs a mutex...
 	// it didn't exist in the cache, so lets load it from disk
+	// we hit this if either the resource hasn't been embedded yet or if
+	// the resource has been updated since the last time we used it
 	data, err := ioutil.ReadFile(resourceName)
 	if err != nil {
 		return nil, err
 	}
-	cache.resources[resourceName] = &data
+	cache.resources[resourceName] = &resourceWithTime{time.Now(), data}
 
-	// TODO(ttacon): is there any reason to not write the file to RelativeTo?
 	return data, hadToReadFromDisk
 }
 
